@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+html, body { background: #fdf7ef; }
+
+.parchment {
+  background:
+    radial-gradient(1200px 400px at 50% -10%, rgba(162,107,30,0.10), transparent 60%),
+    linear-gradient(180deg, #fdf7ef 0%, #f8ecd3 100%);
+}
+
+.gold-line {
+  background: linear-gradient(90deg, transparent, #c98a32 20%, #7c5015 50%, #c98a32 80%, transparent);
+  height: 2px;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  .print-area { box-shadow: none !important; }
+}
