@@ -14,6 +14,13 @@ export default function MenuPage({ searchParams }) {
             The menu opens automatically when you scan the QR code stuck on your table at
             Banalata Hotel &amp; Resort, Joypur.
           </p>
+          <a href={`tel:${RESORT.receptionPhone}`}
+            className="mt-6 inline-flex items-center gap-2 bg-forest-500 hover:bg-forest-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg">
+            📞 Call Reception — {RESORT.receptionPhone}
+          </a>
+          <p className="text-xs text-brand-500 mt-3">
+            Facing an issue? Tap above to call the reception directly.
+          </p>
         </div>
       </main>
     );
@@ -112,10 +119,18 @@ export default function MenuPage({ searchParams }) {
                 <span>TOTAL</span><span>{rupee(placed.total)}</span>
               </div>
             </div>
-            <button
-              onClick={() => setPlaced(null)}
-              className="mt-6 bg-brand-700 hover:bg-brand-800 text-brand-50 px-5 py-2 rounded-lg"
-            >Order more</button>
+            <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
+              <button
+                onClick={() => setPlaced(null)}
+                className="bg-brand-700 hover:bg-brand-800 text-brand-50 px-5 py-2 rounded-lg">
+                Order more
+              </button>
+              <a
+                href={`tel:${RESORT.receptionPhone}`}
+                className="inline-flex items-center justify-center gap-2 bg-forest-500 hover:bg-forest-700 text-white px-5 py-2 rounded-lg">
+                📞 Call Reception
+              </a>
+            </div>
           </div>
         </div>
       </main>
@@ -126,7 +141,18 @@ export default function MenuPage({ searchParams }) {
   return (
     <main className="parchment min-h-screen pb-40">
       {/* header */}
-      <header className="bg-gradient-to-b from-brand-800 to-brand-700 text-brand-50 shadow-lg">
+      <header className="bg-gradient-to-b from-brand-800 to-brand-700 text-brand-50 shadow-lg relative">
+        {/* Call Reception — always visible, top-right */}
+        <a
+          href={`tel:${RESORT.receptionPhone}`}
+          className="absolute top-3 right-3 md:top-4 md:right-5 z-10 inline-flex items-center gap-1.5 bg-forest-500 hover:bg-forest-700 text-white text-xs md:text-sm font-semibold px-3 md:px-4 py-2 rounded-full shadow-lg ring-2 ring-white/30 animate-pulse-slow">
+          <span className="text-base leading-none">📞</span>
+          <span className="hidden sm:inline">
+            {lang === "hi" ? "रिसेप्शन कॉल करें" : lang === "bn" ? "রিসেপশনে কল করুন" : "Call Reception"}
+          </span>
+          <span className="sm:hidden">Call</span>
+        </a>
+
         <div className="max-w-5xl mx-auto px-4 py-5 text-center">
           <p className="tracking-[0.4em] text-brand-200 text-[10px]">JOYPUR FOREST • SINCE 1998</p>
           <h1 className="font-display text-3xl md:text-4xl">Banalata Hotel &amp; Resort</h1>

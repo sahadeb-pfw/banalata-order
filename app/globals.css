@@ -22,3 +22,10 @@ html, body { background: #fdf7ef; }
   body { background: white !important; }
   .print-area { box-shadow: none !important; }
 }
+
+/* Subtle attention pulse for the Call Reception button */
+@keyframes pulseSlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(43, 93, 58, 0.6), 0 4px 12px rgba(0,0,0,0.25); }
+  50%      { box-shadow: 0 0 0 10px rgba(43, 93, 58, 0), 0 4px 12px rgba(0,0,0,0.25); }
+}
+.animate-pulse-slow { animation: pulseSlow 2.4s ease-out infinite; }
