@@ -29,8 +29,8 @@ export default function MenuPage({ searchParams }) {
 
   const [lang, setLang] = useState("en");                 // en | hi | bn
   const [cat,  setCat]  = useState(CATEGORIES[0].id);
-  const [cart, setCart] = useState({});                   // key = id|portion -> {count}
-  const [note, setNote] = useState("");
+  // cart shape: { "id|portion": { item, portion, price, count, note } }
+  const [cart, setCart] = useState({});
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced]   = useState(null);
 
@@ -41,7 +41,14 @@ export default function MenuPage({ searchParams }) {
   const add = (item, portion) => {
     const price = portion === "half" ? item.half : item.price;
     const key = `${item.id}|${portion}`;
-    setCart(c => ({ ...c, [key]: { item, portion, price, count: (c[key]?.count || 0) + 1 } }));
+    setCart(c => ({
+      ...c,
+      [key]: {
+        item, portion, price,
+        count: (c[key]?.count || 0) + 1,
+        note:  c[key]?.note || "",
+      },
+    }));
   };
   const sub = (key) => {
     setCart(c => {
@@ -51,6 +58,20 @@ export default function MenuPage({ searchParams }) {
       if (cur.count <= 1) delete nx[key];
       else nx[key] = { ...cur, count: cur.count - 1 };
       return nx;
+    });
+  };
+  const inc = (key) => {
+    setCart(c => {
+      const cur = c[key];
+      if (!cur) return c;
+      return { ...c, [key]: { ...cur, count: cur.count + 1 } };
+    });
+  };
+  const setItemNote = (key, note) => {
+    setCart(c => {
+      const cur = c[key];
+      if (!cur) return c;
+      return { ...c, [key]: { ...cur, note } };
     });
   };
 
@@ -65,14 +86,14 @@ export default function MenuPage({ searchParams }) {
     setPlacing(true);
     const payload = {
       table,
-      note,
-      items: lines.map(([k, v]) => ({
+      items: lines.map(([, v]) => ({
         id: v.item.id,
         name_en: v.item.en.name,
         qty: v.item[lang].qty,
         unitPrice: v.price,
         count: v.count,
         portion: v.portion,
+        note: v.note || "",
       })),
     };
     const res = await fetch("/api/orders", {
@@ -84,7 +105,6 @@ export default function MenuPage({ searchParams }) {
     setPlacing(false);
     setPlaced(data.order);
     setCart({});
-    setNote("");
   }
 
   // ---------- placed confirmation screen ----------
@@ -103,9 +123,14 @@ export default function MenuPage({ searchParams }) {
             </p>
             <div className="mt-4 text-left text-sm border-t border-brand-100 pt-3">
               {placed.items.map((it, i) => (
-                <div key={i} className="flex justify-between py-0.5">
-                  <span>{it.name_en}{it.portion === "half" ? " (Half)" : ""} × {it.count}</span>
-                  <span>{rupee(it.unitPrice * it.count)}</span>
+                <div key={i} className="py-1">
+                  <div className="flex justify-between">
+                    <span>{it.name_en}{it.portion === "half" ? " (Half)" : ""} × {it.count}</span>
+                    <span>{rupee(it.unitPrice * it.count)}</span>
+                  </div>
+                  {it.note && (
+                    <div className="text-xs text-brand-500 italic">📝 {it.note}</div>
+                  )}
                 </div>
               ))}
               <div className="flex justify-between mt-2 pt-2 border-t border-dashed">
@@ -119,15 +144,20 @@ export default function MenuPage({ searchParams }) {
                 <span>TOTAL</span><span>{rupee(placed.total)}</span>
               </div>
             </div>
-            <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <a
+                href={`/track/${placed.id}`}
+                className="inline-flex items-center justify-center gap-1 bg-brand-700 hover:bg-brand-800 text-white px-4 py-2.5 rounded-lg font-semibold">
+                🔎 Track order
+              </a>
               <button
                 onClick={() => setPlaced(null)}
-                className="bg-brand-700 hover:bg-brand-800 text-brand-50 px-5 py-2 rounded-lg">
-                Order more
+                className="bg-white border border-brand-400 hover:bg-brand-50 text-brand-800 px-4 py-2.5 rounded-lg font-semibold">
+                + Order more
               </button>
               <a
                 href={`tel:${RESORT.receptionPhone}`}
-                className="inline-flex items-center justify-center gap-2 bg-forest-500 hover:bg-forest-700 text-white px-5 py-2 rounded-lg">
+                className="inline-flex items-center justify-center gap-1 bg-forest-500 hover:bg-forest-700 text-white px-4 py-2.5 rounded-lg font-semibold">
                 📞 Call Reception
               </a>
             </div>
@@ -204,7 +234,6 @@ export default function MenuPage({ searchParams }) {
         </h2>
         <div className="gold-line w-32 mx-auto my-3" />
 
-        {/* three-column header (desktop) */}
         <div className="hidden md:grid grid-cols-[1.2fr_1.2fr_1.2fr_auto_auto] gap-3 text-xs uppercase tracking-wider text-brand-600 border-b border-brand-200 pb-2 mb-2">
           <div>English</div>
           <div>हिन्दी</div>
@@ -250,8 +279,7 @@ export default function MenuPage({ searchParams }) {
         subtotal={subtotal}
         cgst={cgst} sgst={sgst} total={total}
         rupee={rupee}
-        sub={sub}
-        note={note} setNote={setNote}
+        sub={sub} inc={inc} setItemNote={setItemNote}
         placing={placing}
         onPlace={placeOrder}
         table={table}
@@ -270,28 +298,27 @@ function NameCell({ name, qty, font = "" }) {
   );
 }
 
-function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, note, setNote, placing, onPlace, table, lang }) {
+function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, inc, setItemNote, placing, onPlace, table, lang }) {
   const [open, setOpen] = useState(false);
   const count = lines.reduce((s, [, v]) => s + v.count, 0);
 
   const labels = {
     en: { review: "Review order", table: "Table", place: "Place order",
           empty: "No items yet — pick something from the menu.",
-          note: "Note for kitchen (allergies, spice level)…",
+          notePh: "Note (e.g. less spicy, no onion)…",
           sub: "Subtotal", tax: "CGST + SGST", tot: "Total incl. GST" },
     hi: { review: "ऑर्डर देखें", table: "टेबल", place: "ऑर्डर दें",
           empty: "अभी कुछ नहीं — मेनू से चुनें।",
-          note: "किचन के लिए नोट (एलर्जी, तीखापन)…",
+          notePh: "नोट (जैसे कम तीखा, बिना प्याज़)…",
           sub: "सबटोटल", tax: "CGST + SGST", tot: "कुल (GST सहित)" },
     bn: { review: "অর্ডার দেখুন", table: "টেবিল", place: "অর্ডার করুন",
           empty: "কিছু বেছে নিন মেনু থেকে।",
-          note: "রান্নাঘরের জন্য নোট (অ্যালার্জি, ঝাল)…",
+          notePh: "নোট (যেমন কম ঝাল, পেঁয়াজ ছাড়া)…",
           sub: "সাবটোটাল", tax: "CGST + SGST", tot: "মোট (GST সহ)" },
   }[lang];
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30">
-      {/* bar */}
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full bg-brand-800 text-brand-50 py-3 flex justify-between items-center px-6 shadow-xl">
@@ -302,38 +329,48 @@ function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, note, se
         <span className="text-brand-200 text-sm">{open ? "▼" : "▲"} {labels.review}</span>
       </button>
 
-      {/* panel */}
       {open && (
-        <div className="bg-white border-t border-brand-200 max-h-[65vh] overflow-y-auto p-4 md:p-6">
+        <div className="bg-white border-t border-brand-200 max-h-[70vh] overflow-y-auto p-4 md:p-6">
           {lines.length === 0 ? (
             <p className="text-center text-brand-600 py-6">{labels.empty}</p>
           ) : (
             <div className="max-w-3xl mx-auto">
               <ul className="divide-y divide-brand-100">
                 {lines.map(([key, v]) => (
-                  <li key={key} className="py-2 flex items-center gap-3">
-                    <div className="flex-1">
-                      <div className="font-medium">
-                        {v.item[lang].name}
-                        {v.portion === "half" && <span className="ml-2 text-xs text-brand-600">(Half)</span>}
+                  <li key={key} className="py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <div className="font-medium">
+                          {v.item[lang].name}
+                          {v.portion === "half" && <span className="ml-2 text-xs text-brand-600">(Half)</span>}
+                        </div>
+                        <div className="text-xs text-brand-600">{v.item[lang].qty} · {rupee(v.price)} × {v.count}</div>
                       </div>
-                      <div className="text-xs text-brand-600">{v.item[lang].qty} · {rupee(v.price)} × {v.count}</div>
+                      {/* − qty + */}
+                      <div className="flex items-center gap-1 bg-brand-50 rounded-full p-1">
+                        <button onClick={() => sub(key)}
+                          className="w-8 h-8 rounded-full bg-white border border-brand-300 text-brand-800 font-bold text-lg leading-none">
+                          −
+                        </button>
+                        <div className="w-6 text-center font-semibold">{v.count}</div>
+                        <button onClick={() => inc(key)}
+                          className="w-8 h-8 rounded-full bg-brand-700 text-white font-bold text-lg leading-none">
+                          +
+                        </button>
+                      </div>
+                      <div className="w-20 text-right font-semibold">{rupee(v.price * v.count)}</div>
                     </div>
-                    <button onClick={() => sub(key)}
-                      className="w-8 h-8 rounded-full bg-brand-100 text-brand-800 font-bold">−</button>
-                    <div className="w-6 text-center">{v.count}</div>
-                    <div className="w-20 text-right font-semibold">{rupee(v.price * v.count)}</div>
+                    {/* per-item kitchen note */}
+                    <input
+                      value={v.note || ""}
+                      onChange={e => setItemNote(key, e.target.value)}
+                      placeholder={labels.notePh}
+                      maxLength={80}
+                      className="mt-2 w-full text-sm bg-amber-50/60 border border-amber-200 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    />
                   </li>
                 ))}
               </ul>
-
-              <textarea
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                placeholder={labels.note}
-                className="mt-4 w-full border border-brand-200 rounded-lg p-2 text-sm bg-brand-50/40"
-                rows={2}
-              />
 
               <div className="mt-4 border-t border-brand-100 pt-3 text-sm">
                 <Row l={labels.sub} v={rupee(subtotal)} />

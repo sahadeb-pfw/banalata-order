@@ -12,18 +12,25 @@ const COLOR = {
 };
 
 export default function Kitchen() {
-  const [orders, setOrders] = useState([]);
-  const [ding,   setDing]   = useState(0);
+  const [orders,  setOrders]  = useState([]);
+  const [sales,   setSales]   = useState(null);
+  const [ding,    setDing]    = useState(0);
   const [preview, setPreview] = useState(null);
+  const [showSales, setShowSales] = useState(false);
   const rupee = (n) => "₹" + n.toLocaleString("en-IN");
 
   async function refresh() {
-    const r = await fetch("/api/orders", { cache: "no-store" });
-    const j = await r.json();
+    const [oRes, sRes] = await Promise.all([
+      fetch("/api/orders", { cache: "no-store" }),
+      fetch("/api/sales",  { cache: "no-store" }),
+    ]);
+    const j = await oRes.json();
+    const s = await sRes.json();
     setOrders(prev => {
       if (j.orders.length > prev.length) setDing(d => d + 1);
       return j.orders;
     });
+    setSales(s);
   }
 
   useEffect(() => {
@@ -44,7 +51,6 @@ export default function Kitchen() {
   }
 
   async function downloadKot(o) {
-    // fetch ESC/POS bytes so operator can save/pipe to thermal printer
     const r = await fetch("/api/print-queue");
     const j = await r.json();
     const job = j.jobs.find(x => x.orderId === o.id);
@@ -60,11 +66,28 @@ export default function Kitchen() {
   return (
     <main className="min-h-screen bg-neutral-900 text-neutral-100">
       <header className="bg-neutral-800 border-b border-neutral-700 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-5 py-3">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 px-5 py-3">
           <div>
             <h1 className="font-display text-2xl text-amber-200">Banalata KOT · Kitchen Screen</h1>
             <p className="text-xs text-neutral-400">Live orders • auto refresh every 2 s • ding: {ding}</p>
           </div>
+
+          {/* Today snapshot in header */}
+          {sales && (
+            <div className="flex gap-2 items-center">
+              <div className="bg-amber-500/20 border border-amber-500 rounded-lg px-3 py-1.5 text-xs">
+                <div className="text-amber-200 text-[10px]">TODAY · {sales.today.date}</div>
+                <div className="font-bold text-white">
+                  {sales.today.orders} served · {rupee(sales.today.total)}
+                </div>
+              </div>
+              <button onClick={() => setShowSales(true)}
+                className="bg-neutral-700 hover:bg-neutral-600 text-white text-xs px-3 py-2 rounded-lg border border-neutral-600">
+                📊 Sales report
+              </button>
+            </div>
+          )}
+
           <div className="flex gap-2 text-xs">
             {STATUSES.map(s => (
               <span key={s} className={`px-2 py-1 rounded ${COLOR[s]} border`}>
@@ -78,7 +101,7 @@ export default function Kitchen() {
       <div className="max-w-7xl mx-auto p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {orders.length === 0 && (
           <div className="col-span-full text-center text-neutral-500 py-20">
-            No orders yet. Open the <a href="/menu?table=42" className="underline text-amber-300">guest menu</a> and place one.
+            No orders yet. Ask a guest to scan a QR and place one.
           </div>
         )}
 
@@ -95,12 +118,19 @@ export default function Kitchen() {
 
             <ul className="mt-3 divide-y">
               {o.items.map((it, i) => (
-                <li key={i} className="py-1 flex justify-between text-sm">
-                  <span>
-                    <b>{it.count}×</b> {it.name_en}{it.portion === "half" ? " (Half)" : ""}
-                    <span className="text-xs text-neutral-500 ml-1">· {it.qty}</span>
-                  </span>
-                  <span className="text-neutral-600">{rupee(it.unitPrice * it.count)}</span>
+                <li key={i} className="py-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span>
+                      <b>{it.count}×</b> {it.name_en}{it.portion === "half" ? " (Half)" : ""}
+                      <span className="text-xs text-neutral-500 ml-1">· {it.qty}</span>
+                    </span>
+                    <span className="text-neutral-600">{rupee(it.unitPrice * it.count)}</span>
+                  </div>
+                  {it.note && (
+                    <div className="text-xs bg-amber-50 border border-amber-200 rounded px-2 py-0.5 mt-1 text-amber-900">
+                      📝 {it.note}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -125,7 +155,7 @@ export default function Kitchen() {
                 </button>
                 {NEXT[o.status] && (
                   <button onClick={() => advance(o)}
-                    className="text-xs bg-forest-500 hover:bg-forest-700 text-white px-3 py-1 rounded">
+                    className="text-xs bg-forest-500 hover:bg-forest-700 text-white px-3 py-1 rounded font-bold">
                     → {NEXT[o.status]}
                   </button>
                 )}
@@ -136,6 +166,7 @@ export default function Kitchen() {
       </div>
 
       {preview && <BillModal o={preview} onClose={() => setPreview(null)} rupee={rupee} />}
+      {showSales && sales && <SalesModal sales={sales} onClose={() => setShowSales(false)} rupee={rupee} />}
     </main>
   );
 }
@@ -165,6 +196,7 @@ function BillModal({ o, onClose, rupee }) {
                 <td className="p-2">
                   {it.name_en}{it.portion === "half" ? " (H)" : ""}
                   <div className="text-[10px] text-neutral-500">{it.qty}</div>
+                  {it.note && <div className="text-[10px] italic text-amber-700">📝 {it.note}</div>}
                 </td>
                 <td>{it.count}</td>
                 <td className="text-right p-2">{rupee(it.unitPrice * it.count)}</td>
@@ -186,6 +218,92 @@ function BillModal({ o, onClose, rupee }) {
           <button onClick={onClose} className="bg-neutral-200 px-4 py-1.5 rounded">Close</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SalesModal({ sales, onClose, rupee }) {
+  const csv = () => {
+    const rows = [["Date", "Served orders", "Total items", "Subtotal ₹", "GST ₹", "Total ₹"]];
+    for (const d of sales.days) {
+      rows.push([d.date, d.orders, d.items, d.subtotal, d.gst.toFixed(2), d.total]);
+    }
+    rows.push([]);
+    rows.push(["Grand total", sales.grandOrders, "", "", "", sales.grandTotal]);
+    const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `banalata-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div className="bg-white text-neutral-900 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="p-6 border-b flex justify-between items-center">
+          <div>
+            <h2 className="font-display text-2xl text-brand-800">Daily Sales Report</h2>
+            <p className="text-xs text-neutral-500">Only <b>SERVED</b> orders are counted · times in Asia/Kolkata</p>
+          </div>
+          <button onClick={onClose} className="text-neutral-500 hover:text-black text-2xl leading-none">×</button>
+        </div>
+
+        <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Stat label="Today · orders" value={sales.today.orders} />
+          <Stat label="Today · revenue" value={rupee(sales.today.total)} />
+          <Stat label="All-time · orders" value={sales.grandOrders} />
+          <Stat label="All-time · revenue" value={rupee(sales.grandTotal)} />
+        </div>
+
+        <div className="px-6 pb-4">
+          <table className="w-full text-sm border">
+            <thead className="bg-brand-100 text-brand-800">
+              <tr>
+                <th className="p-2 text-left">Date</th>
+                <th className="p-2 text-right">Orders</th>
+                <th className="p-2 text-right">Items</th>
+                <th className="p-2 text-right">Subtotal</th>
+                <th className="p-2 text-right">GST</th>
+                <th className="p-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sales.days.length === 0 && (
+                <tr><td colSpan={6} className="text-center text-neutral-500 py-6">No served orders yet.</td></tr>
+              )}
+              {sales.days.map(d => (
+                <tr key={d.date} className="border-t">
+                  <td className="p-2 font-mono">{d.date}</td>
+                  <td className="p-2 text-right">{d.orders}</td>
+                  <td className="p-2 text-right">{d.items}</td>
+                  <td className="p-2 text-right">{rupee(d.subtotal)}</td>
+                  <td className="p-2 text-right">{rupee(d.gst)}</td>
+                  <td className="p-2 text-right font-bold">{rupee(d.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="p-4 border-t flex justify-end gap-2 bg-neutral-50">
+          <button onClick={csv} className="bg-brand-700 text-white px-4 py-2 rounded font-semibold">
+            ⬇ Download CSV (Google Sheets)
+          </button>
+          <button onClick={() => window.print()} className="bg-neutral-200 hover:bg-neutral-300 px-4 py-2 rounded">
+            🖨 Print
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="border border-brand-200 rounded-lg p-3 bg-brand-50">
+      <div className="text-[10px] uppercase tracking-wider text-brand-600">{label}</div>
+      <div className="text-2xl font-display font-bold text-brand-800">{value}</div>
     </div>
   );
 }
