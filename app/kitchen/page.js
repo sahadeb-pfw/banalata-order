@@ -83,7 +83,7 @@ export default function Kitchen() {
               </div>
               <button onClick={() => setShowSales(true)}
                 className="bg-neutral-700 hover:bg-neutral-600 text-white text-xs px-3 py-2 rounded-lg border border-neutral-600">
-                📊 Sales report
+                📊 Daily report
               </button>
             </div>
           )}
@@ -234,7 +234,7 @@ function SalesModal({ sales, onClose, rupee }) {
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `banalata-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `banalata-daily-report-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
   };
 
@@ -243,8 +243,7 @@ function SalesModal({ sales, onClose, rupee }) {
       <div className="bg-white text-neutral-900 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="p-6 border-b flex justify-between items-center">
           <div>
-            <h2 className="font-display text-2xl text-brand-800">Daily Sales Report</h2>
-            <p className="text-xs text-neutral-500">Only <b>SERVED</b> orders are counted · times in Asia/Kolkata</p>
+            <h2 className="font-display text-2xl text-brand-800">Daily Report</h2>
           </div>
           <button onClick={onClose} className="text-neutral-500 hover:text-black text-2xl leading-none">×</button>
         </div>
