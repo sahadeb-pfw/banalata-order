@@ -10,6 +10,11 @@ export async function POST(req) {
   if (!body?.table || !Array.isArray(body?.items) || body.items.length === 0) {
     return NextResponse.json({ error: "table + items required" }, { status: 400 });
   }
-  const order = createOrder(body);
+  const order = createOrder({
+    table: body.table,
+    items: body.items,
+    note:  body.note,
+    guestName: body.guestName,
+  });
   return NextResponse.json({ order });
 }

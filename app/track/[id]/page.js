@@ -74,6 +74,9 @@ export default function TrackPage({ params }) {
             Table <b className="bg-brand-50 text-brand-800 px-2 py-0.5 rounded">#{order.table}</b>
             &nbsp;·&nbsp; {order.id}
           </p>
+          {order.guestName && (
+            <p className="text-brand-100 text-sm mt-1">👤 {order.guestName}</p>
+          )}
         </div>
       </header>
 

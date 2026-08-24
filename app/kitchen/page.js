@@ -111,6 +111,9 @@ export default function Kitchen() {
               <div>
                 <div className="text-xs text-neutral-500">{new Date(o.createdAt).toLocaleTimeString("en-IN")}</div>
                 <div className="text-2xl font-bold">Table #{o.table}</div>
+                {o.guestName && (
+                  <div className="text-sm text-brand-700 font-medium">👤 {o.guestName}</div>
+                )}
                 <div className="text-xs text-neutral-600">{o.id} {o.printed && "· 🖨 printed"}</div>
               </div>
               <div className={`px-3 py-1 rounded-full text-xs font-bold ${COLOR[o.status]}`}>{o.status}</div>
@@ -181,10 +184,13 @@ function BillModal({ o, onClose, rupee }) {
           <div className="text-xs mt-1">GSTIN: {RESORT.gstin} · FSSAI: {RESORT.fssai}</div>
           <div className="text-xs">☎ {RESORT.phone}</div>
         </div>
-        <div className="px-6 py-3 flex justify-between text-sm border-b border-dashed">
-          <div><b>Table:</b> {o.table}</div>
-          <div><b>Bill:</b> {o.id}</div>
-          <div>{new Date(o.createdAt).toLocaleString("en-IN")}</div>
+        <div className="px-6 py-3 text-sm border-b border-dashed">
+          <div className="flex justify-between">
+            <div><b>Table:</b> {o.table}</div>
+            <div><b>Bill:</b> {o.id}</div>
+            <div>{new Date(o.createdAt).toLocaleString("en-IN")}</div>
+          </div>
+          {o.guestName && <div className="mt-1"><b>Guest:</b> {o.guestName}</div>}
         </div>
         <table className="w-full text-sm px-6 py-3">
           <thead className="border-b">

@@ -31,6 +31,7 @@ export default function MenuPage({ searchParams }) {
   const [cat,  setCat]  = useState(CATEGORIES[0].id);
   // cart shape: { "id|portion": { item, portion, price, count, note } }
   const [cart, setCart] = useState({});
+  const [guestName, setGuestName] = useState("");
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced]   = useState(null);
 
@@ -86,6 +87,7 @@ export default function MenuPage({ searchParams }) {
     setPlacing(true);
     const payload = {
       table,
+      guestName: guestName.trim(),
       items: lines.map(([, v]) => ({
         id: v.item.id,
         name_en: v.item.en.name,
@@ -105,6 +107,7 @@ export default function MenuPage({ searchParams }) {
     setPlacing(false);
     setPlaced(data.order);
     setCart({});
+    setGuestName("");
   }
 
   // ---------- placed confirmation screen ----------
@@ -114,7 +117,9 @@ export default function MenuPage({ searchParams }) {
         <div className="max-w-xl mx-auto p-6">
           <div className="bg-white rounded-2xl border border-brand-200 shadow-lg p-8 text-center">
             <div className="text-5xl">✅</div>
-            <h1 className="font-display text-3xl text-brand-800 mt-3">Order placed!</h1>
+            <h1 className="font-display text-3xl text-brand-800 mt-3">
+              {placed.guestName ? `Thank you, ${placed.guestName}!` : "Order placed!"}
+            </h1>
             <p className="text-brand-700 mt-1">Table <b>{placed.table}</b> · {placed.id}</p>
             <div className="gold-line w-40 mx-auto my-4" />
             <p className="text-sm text-brand-700">
@@ -280,6 +285,7 @@ export default function MenuPage({ searchParams }) {
         cgst={cgst} sgst={sgst} total={total}
         rupee={rupee}
         sub={sub} inc={inc} setItemNote={setItemNote}
+        guestName={guestName} setGuestName={setGuestName}
         placing={placing}
         onPlace={placeOrder}
         table={table}
@@ -298,7 +304,7 @@ function NameCell({ name, qty, font = "" }) {
   );
 }
 
-function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, inc, setItemNote, placing, onPlace, table, lang }) {
+function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, inc, setItemNote, guestName, setGuestName, placing, onPlace, table, lang }) {
   const [open, setOpen] = useState(false);
   const count = lines.reduce((s, [, v]) => s + v.count, 0);
 
@@ -306,14 +312,20 @@ function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, inc, set
     en: { review: "Review order", table: "Table", place: "Place order",
           empty: "No items yet — pick something from the menu.",
           notePh: "Note (e.g. less spicy, no onion)…",
+          guestLabel: "Guest Name (Optional)",
+          guestPh: "Your name (optional) — for personalised service",
           sub: "Subtotal", tax: "CGST + SGST", tot: "Total incl. GST" },
     hi: { review: "ऑर्डर देखें", table: "टेबल", place: "ऑर्डर दें",
           empty: "अभी कुछ नहीं — मेनू से चुनें।",
           notePh: "नोट (जैसे कम तीखा, बिना प्याज़)…",
+          guestLabel: "अतिथि का नाम (वैकल्पिक)",
+          guestPh: "आपका नाम (वैकल्पिक) — बेहतर सेवा के लिए",
           sub: "सबटोटल", tax: "CGST + SGST", tot: "कुल (GST सहित)" },
     bn: { review: "অর্ডার দেখুন", table: "টেবিল", place: "অর্ডার করুন",
           empty: "কিছু বেছে নিন মেনু থেকে।",
           notePh: "নোট (যেমন কম ঝাল, পেঁয়াজ ছাড়া)…",
+          guestLabel: "অতিথির নাম (ঐচ্ছিক)",
+          guestPh: "আপনার নাম (ঐচ্ছিক) — ভালো পরিষেবার জন্য",
           sub: "সাবটোটাল", tax: "CGST + SGST", tot: "মোট (GST সহ)" },
   }[lang];
 
@@ -371,6 +383,20 @@ function FloatingCart({ lines, subtotal, cgst, sgst, total, rupee, sub, inc, set
                   </li>
                 ))}
               </ul>
+
+              {/* Guest name (optional) — below the item list */}
+              <div className="mt-4 border-t border-brand-100 pt-3">
+                <label className="block text-xs font-semibold text-brand-700 uppercase tracking-wider mb-1">
+                  👤 {labels.guestLabel}
+                </label>
+                <input
+                  value={guestName}
+                  onChange={e => setGuestName(e.target.value)}
+                  placeholder={labels.guestPh}
+                  maxLength={40}
+                  className="w-full text-sm bg-brand-50/60 border border-brand-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+              </div>
 
               <div className="mt-4 border-t border-brand-100 pt-3 text-sm">
                 <Row l={labels.sub} v={rupee(subtotal)} />
