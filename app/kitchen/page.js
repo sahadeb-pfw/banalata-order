@@ -17,6 +17,7 @@ export default function Kitchen() {
   const [ding,    setDing]    = useState(0);
   const [preview, setPreview] = useState(null);
   const [showSales, setShowSales] = useState(false);
+  const [esConnected, setEsConnected] = useState(false);
   const rupee = (n) => "₹" + n.toLocaleString("en-IN");
 
   async function refresh() {
@@ -34,9 +35,59 @@ export default function Kitchen() {
   }
 
   useEffect(() => {
+    // Initial fetch + polling fallback
     refresh();
     const t = setInterval(refresh, 2000);
-    return () => clearInterval(t);
+
+    // SSE connection for live updates
+    let es;
+    try {
+      es = new EventSource('/api/events/kitchen');
+      // connecting
+      setEsConnected(false);
+
+      es.onopen = () => {
+        setEsConnected(true);
+      };
+
+      es.addEventListener('new_order', e => {
+        try {
+          const o = JSON.parse(e.data);
+          setOrders(prev => [o, ...prev]);
+          setDing(d => d + 1);
+        } catch (err) { /* ignore malformed */ }
+      });
+
+      es.addEventListener('order_update', e => {
+        try {
+          const o = JSON.parse(e.data);
+          setOrders(prev => prev.map(x => x.id === o.id ? o : x));
+        } catch (err) {}
+      });
+
+      es.addEventListener('order_remove', e => {
+        try {
+          const p = JSON.parse(e.data);
+          setOrders(prev => prev.filter(x => x.id !== p.id));
+        } catch (err) {}
+      });
+
+      es.addEventListener('sales_update', () => {
+        fetch('/api/sales', { cache: 'no-store' }).then(r => r.json()).then(setSales).catch(() => {});
+      });
+
+      es.onerror = () => {
+        // EventSource auto-reconnects; mark as disconnected until open
+        setEsConnected(false);
+      };
+    } catch (e) {
+      console.error('SSE not available', e);
+    }
+
+    return () => {
+      clearInterval(t);
+      if (es) es.close();
+    };
   }, []);
 
   async function advance(o) {
@@ -67,9 +118,12 @@ export default function Kitchen() {
     <main className="min-h-screen bg-neutral-900 text-neutral-100">
       <header className="bg-neutral-800 border-b border-neutral-700 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <div>
-            <h1 className="font-display text-2xl text-amber-200">Banalata KOT · Kitchen Screen</h1>
-            <p className="text-xs text-neutral-400">Live orders • auto refresh every 2 s • ding: {ding}</p>
+          <div className="flex items-center gap-3">
+            <span className={`inline-block w-3 h-3 rounded-full ${esConnected ? 'bg-green-400' : 'bg-neutral-600'}`} title={esConnected ? 'Live' : 'Disconnected'} />
+            <div>
+              <h1 className="font-display text-2xl text-amber-200">Banalata KOT · Kitchen Screen</h1>
+              <p className="text-xs text-neutral-400">Live orders • auto refresh every 2 s • ding: {ding}</p>
+            </div>
           </div>
 
           {/* Today snapshot in header */}
