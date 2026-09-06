@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { RESORT } from "../../lib/menu.js";
+import Pusher from "pusher-js";
 
 const STATUSES = ["NEW", "PREPARING", "READY", "SERVED"];
 const NEXT = { NEW: "PREPARING", PREPARING: "READY", READY: "SERVED" };
@@ -39,54 +40,102 @@ export default function Kitchen() {
     refresh();
     const t = setInterval(refresh, 2000);
 
-    // SSE connection for live updates
+    // Prefer Pusher in environments where NEXT_PUBLIC_PUSHER_KEY is provided (preview/prod).
+    // Fallback to SSE (EventSource) for local/dev where SSE route is available.
     let es;
-    try {
-      es = new EventSource('/api/events/kitchen');
-      // connecting
-      setEsConnected(false);
+    let pusher;
+    let kitchenChannel;
 
-      es.onopen = () => {
-        setEsConnected(true);
-      };
+    const hasPusher = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_PUSHER_KEY;
 
-      es.addEventListener('new_order', e => {
-        try {
-          const o = JSON.parse(e.data);
+    if (hasPusher) {
+      try {
+        pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+          cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+          forceTLS: true,
+        });
+        kitchenChannel = pusher.subscribe('kitchen');
+
+        kitchenChannel.bind('new_order', (o) => {
           setOrders(prev => [o, ...prev]);
           setDing(d => d + 1);
-        } catch (err) { /* ignore malformed */ }
-      });
+        });
 
-      es.addEventListener('order_update', e => {
-        try {
-          const o = JSON.parse(e.data);
+        kitchenChannel.bind('order_update', (o) => {
           setOrders(prev => prev.map(x => x.id === o.id ? o : x));
-        } catch (err) {}
-      });
+        });
 
-      es.addEventListener('order_remove', e => {
-        try {
-          const p = JSON.parse(e.data);
+        kitchenChannel.bind('order_remove', (p) => {
           setOrders(prev => prev.filter(x => x.id !== p.id));
-        } catch (err) {}
-      });
+        });
 
-      es.addEventListener('sales_update', () => {
-        fetch('/api/sales', { cache: 'no-store' }).then(r => r.json()).then(setSales).catch(() => {});
-      });
+        kitchenChannel.bind('sales_update', () => {
+          fetch('/api/sales', { cache: 'no-store' }).then(r => r.json()).then(setSales).catch(() => {});
+        });
 
-      es.onerror = () => {
-        // EventSource auto-reconnects; mark as disconnected until open
+        pusher.connection.bind('connected', () => setEsConnected(true));
+        pusher.connection.bind('disconnected', () => setEsConnected(false));
+        pusher.connection.bind('error', () => setEsConnected(false));
+      } catch (e) {
+        console.warn('pusher not available', e);
+      }
+    } else {
+      try {
+        es = new EventSource('/api/events/kitchen');
+        // connecting
         setEsConnected(false);
-      };
-    } catch (e) {
-      console.error('SSE not available', e);
+
+        es.onopen = () => {
+          setEsConnected(true);
+        };
+
+        es.addEventListener('new_order', e => {
+          try {
+            const o = JSON.parse(e.data);
+            setOrders(prev => [o, ...prev]);
+            setDing(d => d + 1);
+          } catch (err) { /* ignore malformed */ }
+        });
+
+        es.addEventListener('order_update', e => {
+          try {
+            const o = JSON.parse(e.data);
+            setOrders(prev => prev.map(x => x.id === o.id ? o : x));
+          } catch (err) {}
+        });
+
+        es.addEventListener('order_remove', e => {
+          try {
+            const p = JSON.parse(e.data);
+            setOrders(prev => prev.filter(x => x.id !== p.id));
+          } catch (err) {}
+        });
+
+        es.addEventListener('sales_update', () => {
+          fetch('/api/sales', { cache: 'no-store' }).then(r => r.json()).then(setSales).catch(() => {});
+        });
+
+        es.onerror = () => {
+          // EventSource auto-reconnects; mark as disconnected until open
+          setEsConnected(false);
+        };
+      } catch (e) {
+        console.error('SSE not available', e);
+      }
     }
 
     return () => {
       clearInterval(t);
-      if (es) es.close();
+      try {
+        if (es) es.close();
+      } catch (_) {}
+      try {
+        if (kitchenChannel) {
+          kitchenChannel.unbind_all && kitchenChannel.unbind_all();
+          pusher.unsubscribe && pusher.unsubscribe('kitchen');
+        }
+        if (pusher) pusher.disconnect && pusher.disconnect();
+      } catch (_) {}
     };
   }, []);
 
@@ -242,131 +291,4 @@ function BillModal({ o, onClose, rupee }) {
           <div className="flex justify-between">
             <div><b>Table:</b> {o.table}</div>
             <div><b>Bill:</b> {o.id}</div>
-            <div>{new Date(o.createdAt).toLocaleString("en-IN")}</div>
-          </div>
-          {o.guestName && <div className="mt-1"><b>Guest:</b> {o.guestName}</div>}
-        </div>
-        <table className="w-full text-sm px-6 py-3">
-          <thead className="border-b">
-            <tr className="text-left"><th className="p-2">Item</th><th>Qty</th><th className="text-right p-2">Amt</th></tr>
-          </thead>
-          <tbody>
-            {o.items.map((it, i) => (
-              <tr key={i} className="border-b border-dotted">
-                <td className="p-2">
-                  {it.name_en}{it.portion === "half" ? " (H)" : ""}
-                  <div className="text-[10px] text-neutral-500">{it.qty}</div>
-                  {it.note && <div className="text-[10px] italic text-amber-700">📝 {it.note}</div>}
-                </td>
-                <td>{it.count}</td>
-                <td className="text-right p-2">{rupee(it.unitPrice * it.count)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="px-6 pb-4 text-sm">
-          <Row l="Subtotal" v={rupee(o.subtotal)} />
-          <Row l={`CGST ${RESORT.cgstPct}%`} v={rupee(o.cgst)} />
-          <Row l={`SGST ${RESORT.sgstPct}%`} v={rupee(o.sgst)} />
-          <div className="border-t border-dashed mt-2 pt-2 flex justify-between font-bold text-lg">
-            <span>TOTAL</span><span>{rupee(o.total)}</span>
-          </div>
-          <p className="text-center text-xs mt-4 italic">Thank you • আবার আসবেন • फिर पधारें</p>
-        </div>
-        <div className="p-3 border-t flex justify-end gap-2 no-print">
-          <button onClick={() => window.print()} className="bg-brand-700 text-white px-4 py-1.5 rounded">🖨 Print</button>
-          <button onClick={onClose} className="bg-neutral-200 px-4 py-1.5 rounded">Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SalesModal({ sales, onClose, rupee }) {
-  const csv = () => {
-    const rows = [["Date", "Served orders", "Total items", "Subtotal ₹", "GST ₹", "Total ₹"]];
-    for (const d of sales.days) {
-      rows.push([d.date, d.orders, d.items, d.subtotal, d.gst.toFixed(2), d.total]);
-    }
-    rows.push([]);
-    rows.push(["Grand total", sales.grandOrders, "", "", "", sales.grandTotal]);
-    const csv = rows.map(r => r.map(x => `"${x}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `banalata-daily-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-white text-neutral-900 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="p-6 border-b flex justify-between items-center">
-          <div>
-            <h2 className="font-display text-2xl text-brand-800">Daily Report</h2>
-          </div>
-          <button onClick={onClose} className="text-neutral-500 hover:text-black text-2xl leading-none">×</button>
-        </div>
-
-        <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Stat label="Today · orders" value={sales.today.orders} />
-          <Stat label="Today · revenue" value={rupee(sales.today.total)} />
-          <Stat label="All-time · orders" value={sales.grandOrders} />
-          <Stat label="All-time · revenue" value={rupee(sales.grandTotal)} />
-        </div>
-
-        <div className="px-6 pb-4">
-          <table className="w-full text-sm border">
-            <thead className="bg-brand-100 text-brand-800">
-              <tr>
-                <th className="p-2 text-left">Date</th>
-                <th className="p-2 text-right">Orders</th>
-                <th className="p-2 text-right">Items</th>
-                <th className="p-2 text-right">Subtotal</th>
-                <th className="p-2 text-right">GST</th>
-                <th className="p-2 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sales.days.length === 0 && (
-                <tr><td colSpan={6} className="text-center text-neutral-500 py-6">No served orders yet.</td></tr>
-              )}
-              {sales.days.map(d => (
-                <tr key={d.date} className="border-t">
-                  <td className="p-2 font-mono">{d.date}</td>
-                  <td className="p-2 text-right">{d.orders}</td>
-                  <td className="p-2 text-right">{d.items}</td>
-                  <td className="p-2 text-right">{rupee(d.subtotal)}</td>
-                  <td className="p-2 text-right">{rupee(d.gst)}</td>
-                  <td className="p-2 text-right font-bold">{rupee(d.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="p-4 border-t flex justify-end gap-2 bg-neutral-50">
-          <button onClick={csv} className="bg-brand-700 text-white px-4 py-2 rounded font-semibold">
-            ⬇ Download CSV (Google Sheets)
-          </button>
-          <button onClick={() => window.print()} className="bg-neutral-200 hover:bg-neutral-300 px-4 py-2 rounded">
-            🖨 Print
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }) {
-  return (
-    <div className="border border-brand-200 rounded-lg p-3 bg-brand-50">
-      <div className="text-[10px] uppercase tracking-wider text-brand-600">{label}</div>
-      <div className="text-2xl font-display font-bold text-brand-800">{value}</div>
-    </div>
-  );
-}
-
-function Row({ l, v }) {
-  return <div className="flex justify-between py-0.5"><span>{l}</span><span>{v}</span></div>;
-}
+The file has been updated. Would you like me to also update the track page similarly? I'll now craft update for track page.
