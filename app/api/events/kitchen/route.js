@@ -1,6 +1,14 @@
+export const dynamic = 'force-dynamic';
+
+import { NextResponse } from "next/server";
 import { registerKitchen, unregisterKitchen } from "../../../../lib/notifications.js";
 
 export async function GET() {
+  // Disable SSE in production/serverless (Vercel) to avoid long-lived workers during build.
+  if (process.env.VERCEL === '1' || process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'SSE disabled in production' }, { status: 501 });
+  }
+
   const t = new TransformStream();
   const writer = t.writable.getWriter();
   const enc = new TextEncoder();
