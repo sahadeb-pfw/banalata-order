@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createOrder, getOrders } from "../../../lib/store.js";
+import { broadcastKitchen } from "../../../lib/notifications.js";
 
 export async function GET() {
   return NextResponse.json({ orders: getOrders() });
@@ -16,5 +17,9 @@ export async function POST(req) {
     note:  body.note,
     guestName: body.guestName,
   });
+
+  // Broadcast new order to kitchen clients
+  try { broadcastKitchen("new_order", order); } catch (e) { /* ignore */ }
+
   return NextResponse.json({ order });
 }

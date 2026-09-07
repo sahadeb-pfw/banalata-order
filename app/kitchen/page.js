@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { RESORT } from "../../lib/menu.js";
+import Pusher from "pusher-js";
 
 const STATUSES = ["NEW", "PREPARING", "READY", "SERVED"];
 const NEXT = { NEW: "PREPARING", PREPARING: "READY", READY: "SERVED" };
@@ -17,6 +18,7 @@ export default function Kitchen() {
   const [ding,    setDing]    = useState(0);
   const [preview, setPreview] = useState(null);
   const [showSales, setShowSales] = useState(false);
+  const [esConnected, setEsConnected] = useState(false);
   const rupee = (n) => "₹" + n.toLocaleString("en-IN");
 
   async function refresh() {
@@ -34,9 +36,107 @@ export default function Kitchen() {
   }
 
   useEffect(() => {
+    // Initial fetch + polling fallback
     refresh();
     const t = setInterval(refresh, 2000);
-    return () => clearInterval(t);
+
+    // Prefer Pusher in environments where NEXT_PUBLIC_PUSHER_KEY is provided (preview/prod).
+    // Fallback to SSE (EventSource) for local/dev where SSE route is available.
+    let es;
+    let pusher;
+    let kitchenChannel;
+
+    const hasPusher = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_PUSHER_KEY;
+
+    if (hasPusher) {
+      try {
+        pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+          cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+          forceTLS: true,
+        });
+        kitchenChannel = pusher.subscribe('kitchen');
+
+        kitchenChannel.bind('new_order', (o) => {
+          setOrders(prev => [o, ...prev]);
+          setDing(d => d + 1);
+        });
+
+        kitchenChannel.bind('order_update', (o) => {
+          setOrders(prev => prev.map(x => x.id === o.id ? o : x));
+        });
+
+        kitchenChannel.bind('order_remove', (p) => {
+          setOrders(prev => prev.filter(x => x.id !== p.id));
+        });
+
+        kitchenChannel.bind('sales_update', () => {
+          fetch('/api/sales', { cache: 'no-store' }).then(r => r.json()).then(setSales).catch(() => {});
+        });
+
+        pusher.connection.bind('connected', () => setEsConnected(true));
+        pusher.connection.bind('disconnected', () => setEsConnected(false));
+        pusher.connection.bind('error', () => setEsConnected(false));
+      } catch (e) {
+        console.warn('pusher not available', e);
+      }
+    } else {
+      try {
+        es = new EventSource('/api/events/kitchen');
+        // connecting
+        setEsConnected(false);
+
+        es.onopen = () => {
+          setEsConnected(true);
+        };
+
+        es.addEventListener('new_order', e => {
+          try {
+            const o = JSON.parse(e.data);
+            setOrders(prev => [o, ...prev]);
+            setDing(d => d + 1);
+          } catch (err) { /* ignore malformed */ }
+        });
+
+        es.addEventListener('order_update', e => {
+          try {
+            const o = JSON.parse(e.data);
+            setOrders(prev => prev.map(x => x.id === o.id ? o : x));
+          } catch (err) {}
+        });
+
+        es.addEventListener('order_remove', e => {
+          try {
+            const p = JSON.parse(e.data);
+            setOrders(prev => prev.filter(x => x.id !== p.id));
+          } catch (err) {}
+        });
+
+        es.addEventListener('sales_update', () => {
+          fetch('/api/sales', { cache: 'no-store' }).then(r => r.json()).then(setSales).catch(() => {});
+        });
+
+        es.onerror = () => {
+          // EventSource auto-reconnects; mark as disconnected until open
+          setEsConnected(false);
+        };
+      } catch (e) {
+        console.error('SSE not available', e);
+      }
+    }
+
+    return () => {
+      clearInterval(t);
+      try {
+        if (es) es.close();
+      } catch (_) {}
+      try {
+        if (kitchenChannel) {
+          kitchenChannel.unbind_all && kitchenChannel.unbind_all();
+          pusher.unsubscribe && pusher.unsubscribe('kitchen');
+        }
+        if (pusher) pusher.disconnect && pusher.disconnect();
+      } catch (_) {}
+    };
   }, []);
 
   async function advance(o) {
@@ -67,9 +167,12 @@ export default function Kitchen() {
     <main className="min-h-screen bg-neutral-900 text-neutral-100">
       <header className="bg-neutral-800 border-b border-neutral-700 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <div>
-            <h1 className="font-display text-2xl text-amber-200">Banalata KOT · Kitchen Screen</h1>
-            <p className="text-xs text-neutral-400">Live orders • auto refresh every 2 s • ding: {ding}</p>
+          <div className="flex items-center gap-3">
+            <span className={`inline-block w-3 h-3 rounded-full ${esConnected ? 'bg-green-400' : 'bg-neutral-600'}`} title={esConnected ? 'Live' : 'Disconnected'} />
+            <div>
+              <h1 className="font-display text-2xl text-amber-200">Banalata KOT · Kitchen Screen</h1>
+              <p className="text-xs text-neutral-400">Live orders • auto refresh every 2 s • ding: {ding}</p>
+            </div>
           </div>
 
           {/* Today snapshot in header */}
@@ -188,8 +291,8 @@ function BillModal({ o, onClose, rupee }) {
           <div className="flex justify-between">
             <div><b>Table:</b> {o.table}</div>
             <div><b>Bill:</b> {o.id}</div>
-            <div>{new Date(o.createdAt).toLocaleString("en-IN")}</div>
           </div>
+          <div className="mt-2 text-xs">{new Date(o.createdAt).toLocaleString("en-IN")}</div>
           {o.guestName && <div className="mt-1"><b>Guest:</b> {o.guestName}</div>}
         </div>
         <table className="w-full text-sm px-6 py-3">

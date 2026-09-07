@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { RESORT } from "../../../lib/menu.js";
+import Pusher from "pusher-js";
 
 const STEPS = [
-  { key: "NEW",       icon: "📝", en: "Order placed",  hi: "ऑर्डर मिला",       bn: "অর্ডার এসেছে",   desc_en: "Reception received your order and bill is printing." },
+  { key: "NEW",       icon: "📝", en: "Order placed",  hi: "ऑर्डर मिला",       bn: "অর্ডার এসেছে",   desc_en: "Reception received your order and bill is printed" },
   { key: "PREPARING", icon: "🍳", en: "Preparing",     hi: "बन रहा है",         bn: "রান্না হচ্ছে",    desc_en: "Chef has started cooking your food." },
   { key: "READY",     icon: "🔔", en: "Ready",         hi: "तैयार",             bn: "প্রস্তুত",         desc_en: "Food is ready and a steward is coming to your table." },
   { key: "SERVED",    icon: "🍽️", en: "Served",        hi: "परोसा गया",         bn: "পরিবেশিত",       desc_en: "Enjoy your meal! Aabar aashben 🙏" },
@@ -18,6 +19,7 @@ export default function TrackPage({ params }) {
 
   useEffect(() => {
     let alive = true;
+
     async function tick() {
       try {
         const r = await fetch(`/api/orders/${id}`, { cache: "no-store" });
@@ -28,10 +30,31 @@ export default function TrackPage({ params }) {
         if (alive) setError("Network issue — retrying…");
       }
     }
+
     tick();
     const t = setInterval(tick, 3000);
     const t2 = setInterval(() => setTicker(x => x + 1), 30_000);
-    return () => { alive = false; clearInterval(t); clearInterval(t2); };
+
+    // Realtime subscription (prefer Pusher if configured)
+    let pusher;
+    try {
+      if (process.env.NEXT_PUBLIC_PUSHER_KEY) {
+        pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+          cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+          forceTLS: true,
+        });
+        const ch = pusher.subscribe(`order-${id}`);
+
+        ch.bind("order_update", (o) => { if (alive) { setOrder(o); setError(""); } });
+        ch.bind("order_remove", () => {
+          if (alive) setError("Order removed from live board (served). You can still view history.");
+        });
+      }
+    } catch (e) {
+      console.warn('pusher not available', e);
+    }
+
+    return () => { alive = false; clearInterval(t); clearInterval(t2); try { if (pusher) { pusher.unsubscribe(`order-${id}`); pusher.disconnect(); } } catch (_) {} };
   }, [id]);
 
   if (error && !order) {
@@ -41,8 +64,7 @@ export default function TrackPage({ params }) {
           <div className="text-5xl mb-3">🔍</div>
           <h1 className="font-display text-2xl text-brand-800">{error}</h1>
           <p className="text-brand-700 text-sm mt-2">Order ID <b>{id}</b> could not be found.</p>
-          <a href={`tel:${RESORT.receptionPhone}`}
-            className="mt-6 inline-flex items-center gap-2 bg-forest-500 hover:bg-forest-700 text-white font-semibold px-6 py-3 rounded-xl">
+          <a href={`tel:${RESORT.receptionPhone}`} className="mt-6 inline-flex items-center gap-2 bg-forest-500 hover:bg-forest-700 text-white font-semibold px-6 py-3 rounded-xl">
             📞 Call Reception
           </a>
         </div>
@@ -155,32 +177,14 @@ export default function TrackPage({ params }) {
 
         {/* actions */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <a href={`/menu?table=${order.table}`}
-            className="bg-white border border-brand-400 hover:bg-brand-50 text-brand-800 px-4 py-2.5 rounded-lg text-center font-semibold">
+          <a href={`/menu?table=${order.table}`} className="bg-white border border-brand-400 hover:bg-brand-50 text-brand-800 px-4 py-2.5 rounded-lg text-center font-semibold">
             ← Back to menu
           </a>
-          <a href={`tel:${RESORT.receptionPhone}`}
-            className="bg-forest-500 hover:bg-forest-700 text-white px-4 py-2.5 rounded-lg text-center font-semibold">
+          <a href={`tel:${RESORT.receptionPhone}`} className="bg-forest-500 hover:bg-forest-700 text-white px-4 py-2.5 rounded-lg text-center font-semibold">
             📞 Call Reception
           </a>
         </div>
       </section>
     </main>
   );
-}
-
-function Row({ l, v, small, bold }) {
-  return (
-    <div className={`flex justify-between ${small ? "text-xs text-brand-600" : ""} ${bold ? "font-bold text-brand-800 text-lg mt-1" : ""}`}>
-      <span>{l}</span><span>{v}</span>
-    </div>
-  );
-}
-
-function relTime(ts) {
-  const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 60)     return "just now";
-  if (s < 3600)   return `${Math.round(s / 60)} min ago`;
-  if (s < 86400)  return `${Math.round(s / 3600)} h ago`;
-  return new Date(ts).toLocaleDateString("en-IN");
 }
